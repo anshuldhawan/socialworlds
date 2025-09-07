@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>World1 • Spark + Three.js</title>
     <style> body { margin: 0; overflow: hidden; } html, body, canvas { width: 100%; height: 100%; } </style>
+    <script src="/socket.io/socket.io.js"></script>
     <script type="importmap">
       {
         "imports": {
@@ -17,10 +18,195 @@
   </head>
   <body>
     <div id="hud" style="position:fixed;left:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
+    <div id="users-list" style="position:fixed;right:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
+    <div id="audio-controls" style="position:fixed;bottom:8px;left:8px;z-index:10;">
+      <button id="mic-toggle" style="padding:8px 12px;background:#00ff00;border:none;border-radius:4px;color:black;font-weight:bold;">🎤 ON</button>
+    </div>
     <script type="module">
       import * as THREE from 'three';
       import { SplatMesh } from '@sparkjsdev/spark';
       import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+      // Multiplayer setup
+      const socket = io('http://localhost:3000');
+      let localUser = null;
+      const remoteUsers = new Map();
+      const userAvatars = new Map();
+      const peerConnections = new Map();
+      let localStream = null;
+      let micEnabled = true;
+
+      // Audio setup
+      async function setupAudio() {
+        try {
+          localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        } catch (err) {
+          console.warn('Could not access microphone:', err);
+        }
+      }
+      setupAudio();
+
+      // WebRTC configuration
+      const rtcConfig = {
+        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+      };
+
+      // Create user avatar (blob)
+      function createUserAvatar(userData) {
+        const geometry = new THREE.SphereGeometry(0.1, 16, 16);
+        const material = new THREE.MeshBasicMaterial({ color: userData.color });
+        const avatar = new THREE.Mesh(geometry, material);
+        avatar.position.set(userData.position.x, userData.position.y, userData.position.z);
+        
+        // Add username label
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        canvas.width = 256;
+        canvas.height = 64;
+        context.font = '20px Arial';
+        context.fillStyle = 'white';
+        context.textAlign = 'center';
+        context.fillText(userData.username, 128, 40);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
+        const sprite = new THREE.Sprite(spriteMaterial);
+        sprite.position.set(0, 0.2, 0);
+        sprite.scale.set(0.3, 0.075, 1);
+        avatar.add(sprite);
+        
+        return avatar;
+      }
+
+      // WebRTC peer connection setup
+      async function createPeerConnection(targetUserId) {
+        const pc = new RTCPeerConnection(rtcConfig);
+        peerConnections.set(targetUserId, pc);
+        
+        // Add local stream to connection
+        if (localStream) {
+          localStream.getTracks().forEach(track => {
+            pc.addTrack(track, localStream);
+          });
+        }
+        
+        // Handle remote stream
+        pc.ontrack = (event) => {
+          const remoteAudio = document.createElement('audio');
+          remoteAudio.srcObject = event.streams[0];
+          remoteAudio.autoplay = true;
+          remoteAudio.setAttribute('data-user', targetUserId);
+          document.body.appendChild(remoteAudio);
+        };
+        
+        // Handle ICE candidates
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            socket.emit('ice-candidate', {
+              target: targetUserId,
+              candidate: event.candidate
+            });
+          }
+        };
+        
+        return pc;
+      }
+
+      // Socket event handlers
+      socket.on('user-data', (userData) => {
+        localUser = userData;
+        console.log('Connected as:', userData.username);
+      });
+      
+      socket.on('existing-users', (users) => {
+        users.forEach(userData => {
+          remoteUsers.set(userData.id, userData);
+          const avatar = createUserAvatar(userData);
+          userAvatars.set(userData.id, avatar);
+          scene.add(avatar);
+          
+          // Initialize WebRTC connection
+          createPeerConnection(userData.id);
+        });
+      });
+      
+      socket.on('user-joined', async (userData) => {
+        remoteUsers.set(userData.id, userData);
+        const avatar = createUserAvatar(userData);
+        userAvatars.set(userData.id, avatar);
+        scene.add(avatar);
+        
+        // Create WebRTC offer
+        const pc = await createPeerConnection(userData.id);
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('offer', { target: userData.id, offer });
+      });
+      
+      socket.on('user-left', (userId) => {
+        const avatar = userAvatars.get(userId);
+        if (avatar) {
+          scene.remove(avatar);
+          userAvatars.delete(userId);
+        }
+        remoteUsers.delete(userId);
+        
+        // Clean up WebRTC connection
+        const pc = peerConnections.get(userId);
+        if (pc) {
+          pc.close();
+          peerConnections.delete(userId);
+        }
+        
+        // Remove audio element
+        const audioEl = document.querySelector(`audio[data-user="${userId}"]`);
+        if (audioEl) audioEl.remove();
+      });
+      
+      socket.on('user-moved', (data) => {
+        const user = remoteUsers.get(data.id);
+        const avatar = userAvatars.get(data.id);
+        if (user && avatar) {
+          user.position = data.position;
+          avatar.position.set(data.position.x, data.position.y, data.position.z);
+        }
+      });
+      
+      // WebRTC signaling
+      socket.on('offer', async (data) => {
+        const pc = await createPeerConnection(data.sender);
+        await pc.setRemoteDescription(data.offer);
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket.emit('answer', { target: data.sender, answer });
+      });
+      
+      socket.on('answer', async (data) => {
+        const pc = peerConnections.get(data.sender);
+        if (pc) {
+          await pc.setRemoteDescription(data.answer);
+        }
+      });
+      
+      socket.on('ice-candidate', async (data) => {
+        const pc = peerConnections.get(data.sender);
+        if (pc) {
+          await pc.addIceCandidate(data.candidate);
+        }
+      });
+
+      // Mic toggle
+      document.getElementById('mic-toggle').addEventListener('click', () => {
+        if (localStream) {
+          micEnabled = !micEnabled;
+          localStream.getAudioTracks().forEach(track => {
+            track.enabled = micEnabled;
+          });
+          const button = document.getElementById('mic-toggle');
+          button.textContent = micEnabled ? '🎤 ON' : '🎤 OFF';
+          button.style.background = micEnabled ? '#00ff00' : '#ff0000';
+        }
+      });
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -154,6 +340,8 @@
 
       // HUD
       const hud = document.getElementById('hud');
+      const usersList = document.getElementById('users-list');
+      
       function updateHUD() {
         const p = camera.position;
         const pr = renderer.getPixelRatio().toFixed(2);
@@ -163,7 +351,17 @@
           heap = `${(performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(0)}MB`;
         }
         const mem = renderer.info.memory;
-        hud.textContent = `fps: ${fpsEma.toFixed(1)}  pr: ${pr}  heap: ${heap}\ngeo: ${mem.geometries} tex: ${mem.textures}\npos: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`;
+        const username = localUser ? localUser.username : 'Connecting...';
+        hud.textContent = `${username}\nfps: ${fpsEma.toFixed(1)}  pr: ${pr}  heap: ${heap}\ngeo: ${mem.geometries} tex: ${mem.textures}\npos: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`;
+        
+        // Update users list
+        const userCount = remoteUsers.size + (localUser ? 1 : 0);
+        let usersText = `Users (${userCount}):\n`;
+        if (localUser) usersText += `• ${localUser.username} (you)\n`;
+        remoteUsers.forEach(user => {
+          usersText += `• ${user.username}\n`;
+        });
+        usersList.textContent = usersText;
       }
 
       // Animate
@@ -196,6 +394,29 @@
         controls.update();
         clampToBounds();
         updateHUD();
+        
+        // Update local user position
+        if (localUser) {
+          const newPos = {
+            x: parseFloat(camera.position.x.toFixed(2)),
+            y: parseFloat(camera.position.y.toFixed(2)),
+            z: parseFloat(camera.position.z.toFixed(2))
+          };
+          
+          // Only send update if position changed significantly
+          const oldPos = localUser.position;
+          const distance = Math.sqrt(
+            Math.pow(newPos.x - oldPos.x, 2) +
+            Math.pow(newPos.y - oldPos.y, 2) +
+            Math.pow(newPos.z - oldPos.z, 2)
+          );
+          
+          if (distance > 0.01) {
+            localUser.position = newPos;
+            socket.emit('update-position', newPos);
+          }
+        }
+        
         renderer.render(scene, camera);
       });
     </script>
