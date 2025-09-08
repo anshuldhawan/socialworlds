@@ -39,7 +39,9 @@ This is a multiplayer 3D visualization web application built with Three.js and t
 
 ### Multiplayer Features
 - Real-time voice communication via WebRTC
-- Blob avatars representing each user in 3D space
+- Animated 3D character avatars (alien, robot, dino models)
+- Idle and walking animations based on user movement
+- Random character assignment for each user
 - Position synchronization across all connected users
 - Random username assignment (e.g., "SwiftFox42")
 - Microphone toggle controls
