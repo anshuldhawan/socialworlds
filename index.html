@@ -3,424 +3,227 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>World1 • Spark + Three.js</title>
-    <style> body { margin: 0; overflow: hidden; } html, body, canvas { width: 100%; height: 100%; } </style>
-    <script src="/socket.io/socket.io.js"></script>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.174.0/three.module.js",
-          "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.8/spark.module.js",
-          "three/addons/": "https://unpkg.com/three@0.174.0/examples/jsm/"
-        }
+    <title>World1 • Spark + Three.js Multiplayer</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: 'Arial', sans-serif;
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        overflow-x: hidden;
       }
-    </script>
+      
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 40px 20px;
+        text-align: center;
+      }
+      
+      h1 {
+        font-size: 3em;
+        margin-bottom: 20px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+      }
+      
+      .subtitle {
+        font-size: 1.2em;
+        margin-bottom: 50px;
+        opacity: 0.9;
+      }
+      
+      .worlds-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 30px;
+        margin-top: 50px;
+      }
+      
+      .world-card {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 15px;
+        padding: 30px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      
+      .world-card:hover {
+        transform: translateY(-10px);
+        background: rgba(255, 255, 255, 0.2);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+      }
+      
+      .world-image {
+        width: 100%;
+        height: 200px;
+        background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+        border-radius: 10px;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4em;
+        position: relative;
+        overflow: hidden;
+      }
+      
+      .world-image::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><radialGradient id="a" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(255,255,255,0.3)"/><stop offset="100%" stop-color="rgba(255,255,255,0)"/></radialGradient></defs><circle cx="20" cy="30" r="2" fill="white" opacity="0.6"/><circle cx="80" cy="20" r="1.5" fill="white" opacity="0.4"/><circle cx="60" cy="70" r="1" fill="white" opacity="0.5"/><circle cx="30" cy="80" r="1.5" fill="white" opacity="0.3"/></svg>');
+        animation: sparkle 3s ease-in-out infinite;
+      }
+      
+      @keyframes sparkle {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
+      }
+      
+      .world-title {
+        font-size: 1.5em;
+        margin-bottom: 10px;
+        font-weight: bold;
+      }
+      
+      .world-description {
+        opacity: 0.8;
+        line-height: 1.5;
+        margin-bottom: 20px;
+      }
+      
+      .enter-button {
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 25px;
+        font-size: 1em;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      
+      .enter-button:hover {
+        background: #45a049;
+        transform: scale(1.05);
+      }
+      
+      .coming-soon {
+        opacity: 0.5;
+      }
+      
+      .coming-soon .enter-button {
+        background: #666;
+        cursor: not-allowed;
+      }
+      
+      .coming-soon .enter-button:hover {
+        background: #666;
+        transform: none;
+      }
+      
+      .features {
+        margin-top: 60px;
+        text-align: left;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 30px;
+        border-radius: 15px;
+        backdrop-filter: blur(10px);
+      }
+      
+      .features h3 {
+        margin-bottom: 20px;
+        color: #64b5f6;
+      }
+      
+      .feature-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+      }
+      
+      .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      
+      .feature-item::before {
+        content: '✨';
+        font-size: 1.2em;
+      }
+    </style>
   </head>
   <body>
-    <div id="hud" style="position:fixed;left:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
-    <div id="users-list" style="position:fixed;right:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
-    <div id="audio-controls" style="position:fixed;bottom:8px;left:8px;z-index:10;">
-      <button id="mic-toggle" style="padding:8px 12px;background:#00ff00;border:none;border-radius:4px;color:black;font-weight:bold;">🎤 ON</button>
+    <div class="container">
+      <h1>🌍 World1 Multiplayer</h1>
+      <p class="subtitle">Explore immersive 3D worlds together with voice chat</p>
+      
+      <div class="worlds-grid">
+        <div class="world-card" onclick="enterWorld('world1')">
+          <div class="world-image">🏔️</div>
+          <div class="world-title">Mountain Landscape</div>
+          <div class="world-description">
+            Explore a stunning 3D gaussian splat rendering of a mountain landscape. Move around with WASD keys, talk with other explorers using voice chat, and discover hidden details in this immersive environment.
+          </div>
+          <button class="enter-button">Enter World</button>
+        </div>
+        
+        <div class="world-card coming-soon">
+          <div class="world-image">🏙️</div>
+          <div class="world-title">City Explorer</div>
+          <div class="world-description">
+            Navigate through an urban environment with towering buildings and bustling streets. Perfect for group exploration and virtual meetups.
+          </div>
+          <button class="enter-button">Coming Soon</button>
+        </div>
+        
+        <div class="world-card coming-soon">
+          <div class="world-image">🌊</div>
+          <div class="world-title">Ocean Depths</div>
+          <div class="world-description">
+            Dive into the deep blue sea and discover underwater wonders. Experience the tranquility of the ocean with your friends.
+          </div>
+          <button class="enter-button">Coming Soon</button>
+        </div>
+        
+        <div class="world-card coming-soon">
+          <div class="world-image">🌌</div>
+          <div class="world-title">Space Station</div>
+          <div class="world-description">
+            Float through a futuristic space station and gaze at the stars. Perfect for cosmic conversations and zero-gravity exploration.
+          </div>
+          <button class="enter-button">Coming Soon</button>
+        </div>
+      </div>
+      
+      <div class="features">
+        <h3>🎮 Features</h3>
+        <div class="feature-list">
+          <div class="feature-item">Real-time voice communication</div>
+          <div class="feature-item">Multiplayer 3D exploration</div>
+          <div class="feature-item">WASD keyboard navigation</div>
+          <div class="feature-item">Gaussian splat rendering</div>
+          <div class="feature-item">Live user avatars</div>
+          <div class="feature-item">Performance optimization</div>
+        </div>
+      </div>
     </div>
-    <script type="module">
-      import * as THREE from 'three';
-      import { SplatMesh } from '@sparkjsdev/spark';
-      import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
-      // Multiplayer setup
-      const socket = io();
-      let localUser = null;
-      const remoteUsers = new Map();
-      const userAvatars = new Map();
-      const peerConnections = new Map();
-      let localStream = null;
-      let micEnabled = true;
-
-      // Audio setup
-      async function setupAudio() {
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        } catch (err) {
-          console.warn('Could not access microphone:', err);
+    
+    <script>
+      function enterWorld(worldName) {
+        if (worldName === 'world1') {
+          window.location.href = '/world1.html';
         }
       }
-      setupAudio();
-
-      // WebRTC configuration
-      const rtcConfig = {
-        iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-      };
-
-      // Create user avatar (blob)
-      function createUserAvatar(userData) {
-        const geometry = new THREE.SphereGeometry(0.1, 16, 16);
-        const material = new THREE.MeshBasicMaterial({ color: userData.color });
-        const avatar = new THREE.Mesh(geometry, material);
-        avatar.position.set(userData.position.x, userData.position.y, userData.position.z);
-        
-        // Add username label
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        canvas.width = 256;
-        canvas.height = 64;
-        context.font = '20px Arial';
-        context.fillStyle = 'white';
-        context.textAlign = 'center';
-        context.fillText(userData.username, 128, 40);
-        
-        const texture = new THREE.CanvasTexture(canvas);
-        const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
-        const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(0, 0.2, 0);
-        sprite.scale.set(0.3, 0.075, 1);
-        avatar.add(sprite);
-        
-        return avatar;
-      }
-
-      // WebRTC peer connection setup
-      async function createPeerConnection(targetUserId) {
-        const pc = new RTCPeerConnection(rtcConfig);
-        peerConnections.set(targetUserId, pc);
-        
-        // Add local stream to connection
-        if (localStream) {
-          localStream.getTracks().forEach(track => {
-            pc.addTrack(track, localStream);
-          });
-        }
-        
-        // Handle remote stream
-        pc.ontrack = (event) => {
-          const remoteAudio = document.createElement('audio');
-          remoteAudio.srcObject = event.streams[0];
-          remoteAudio.autoplay = true;
-          remoteAudio.setAttribute('data-user', targetUserId);
-          document.body.appendChild(remoteAudio);
-        };
-        
-        // Handle ICE candidates
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            socket.emit('ice-candidate', {
-              target: targetUserId,
-              candidate: event.candidate
-            });
-          }
-        };
-        
-        return pc;
-      }
-
-      // Socket event handlers
-      socket.on('user-data', (userData) => {
-        localUser = userData;
-        console.log('Connected as:', userData.username);
-      });
-      
-      socket.on('existing-users', (users) => {
-        users.forEach(userData => {
-          remoteUsers.set(userData.id, userData);
-          const avatar = createUserAvatar(userData);
-          userAvatars.set(userData.id, avatar);
-          scene.add(avatar);
-          
-          // Initialize WebRTC connection
-          createPeerConnection(userData.id);
-        });
-      });
-      
-      socket.on('user-joined', async (userData) => {
-        remoteUsers.set(userData.id, userData);
-        const avatar = createUserAvatar(userData);
-        userAvatars.set(userData.id, avatar);
-        scene.add(avatar);
-        
-        // Create WebRTC offer
-        const pc = await createPeerConnection(userData.id);
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('offer', { target: userData.id, offer });
-      });
-      
-      socket.on('user-left', (userId) => {
-        const avatar = userAvatars.get(userId);
-        if (avatar) {
-          scene.remove(avatar);
-          userAvatars.delete(userId);
-        }
-        remoteUsers.delete(userId);
-        
-        // Clean up WebRTC connection
-        const pc = peerConnections.get(userId);
-        if (pc) {
-          pc.close();
-          peerConnections.delete(userId);
-        }
-        
-        // Remove audio element
-        const audioEl = document.querySelector(`audio[data-user="${userId}"]`);
-        if (audioEl) audioEl.remove();
-      });
-      
-      socket.on('user-moved', (data) => {
-        const user = remoteUsers.get(data.id);
-        const avatar = userAvatars.get(data.id);
-        if (user && avatar) {
-          user.position = data.position;
-          avatar.position.set(data.position.x, data.position.y, data.position.z);
-        }
-      });
-      
-      // WebRTC signaling
-      socket.on('offer', async (data) => {
-        const pc = await createPeerConnection(data.sender);
-        await pc.setRemoteDescription(data.offer);
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-        socket.emit('answer', { target: data.sender, answer });
-      });
-      
-      socket.on('answer', async (data) => {
-        const pc = peerConnections.get(data.sender);
-        if (pc) {
-          await pc.setRemoteDescription(data.answer);
-        }
-      });
-      
-      socket.on('ice-candidate', async (data) => {
-        const pc = peerConnections.get(data.sender);
-        if (pc) {
-          await pc.addIceCandidate(data.candidate);
-        }
-      });
-
-      // Mic toggle
-      document.getElementById('mic-toggle').addEventListener('click', () => {
-        if (localStream) {
-          micEnabled = !micEnabled;
-          localStream.getAudioTracks().forEach(track => {
-            track.enabled = micEnabled;
-          });
-          const button = document.getElementById('mic-toggle');
-          button.textContent = micEnabled ? '🎤 ON' : '🎤 OFF';
-          button.style.background = micEnabled ? '#00ff00' : '#ff0000';
-        }
-      });
-
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0.97, 0.02, -3.49);
-      const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, powerPreference: 'high-performance' });
-      let desiredPixelRatio = Math.min(window.devicePixelRatio, 1.0);
-      const minPixelRatio = 0.5;
-      const maxPixelRatio = Math.min(1.5, window.devicePixelRatio);
-      renderer.setPixelRatio(desiredPixelRatio);
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
-      renderer.debug.checkShaderErrors = false;
-
-      // Basic lighting isn't required for splats, but adding a neutral background helps
-      renderer.setClearColor(0x000000, 1);
-
-      // Controls
-      const controls = new OrbitControls(camera, renderer.domElement);
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.05;
-      controls.minDistance = 0.2;
-      controls.maxDistance = 50;
-
-      // Load local SPZ file
-      const splatURL = './world1.spz';
-      const world = new SplatMesh({ url: splatURL });
-      // Orient and position so it's visible
-      world.quaternion.set(1, 0, 0, 0);
-      world.position.set(0, 0, -3);
-      scene.add(world);
-      world.updateMatrix();
-      world.matrixAutoUpdate = false;
-      controls.target.set(0, 0, -3);
-      controls.update();
-
-      // Camera bounds: keep camera and target within a sphere around the mesh center
-      const boundsCenter = controls.target.clone();
-      let boundsRadius = 2.0; // fallback radius if we can't infer
-      // Try to infer radius if available on the object
-      try {
-        if (world.geometry && world.geometry.boundingSphere) {
-          world.geometry.computeBoundingSphere();
-          if (world.geometry.boundingSphere && world.geometry.boundingSphere.radius) {
-            boundsRadius = world.geometry.boundingSphere.radius;
-          }
-        } else if (world.boundingSphere && world.boundingSphere.radius) {
-          boundsRadius = world.boundingSphere.radius;
-        }
-      } catch (_) {}
-      // Leave a small margin so we don't clip the boundary exactly
-      const boundsMargin = 0.02;
-      controls.maxDistance = Math.max(0.05, boundsRadius - boundsMargin);
-
-      function clampToBounds() {
-        const maxDist = Math.max(0.05, boundsRadius - boundsMargin);
-        const offset = new THREE.Vector3().subVectors(camera.position, boundsCenter);
-        const dist = offset.length();
-        if (dist > maxDist) {
-          offset.normalize().multiplyScalar(maxDist);
-          camera.position.copy(boundsCenter).add(offset);
-        }
-        const tOffset = new THREE.Vector3().subVectors(controls.target, boundsCenter);
-        const tDist = tOffset.length();
-        const tMax = Math.max(0.0, boundsRadius - boundsMargin);
-        if (tDist > tMax) {
-          tOffset.normalize().multiplyScalar(tMax);
-          controls.target.copy(boundsCenter).add(tOffset);
-        }
-      }
-      controls.addEventListener('change', clampToBounds);
-      // Expose a simple tuner in console if needed
-      window.setBoundsRadius = (r) => { boundsRadius = Math.max(0.1, Number(r) || boundsRadius); controls.maxDistance = Math.max(0.05, boundsRadius - boundsMargin); clampToBounds(); };
-
-      // Handle resize
-      function onWindowResize() {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(desiredPixelRatio);
-      }
-      window.addEventListener('resize', onWindowResize);
-
-      // Keyboard navigation (WASD to move, QE up/down, arrows also supported)
-      const pressed = new Set();
-      window.addEventListener('keydown', (e) => {
-        pressed.add(e.key.toLowerCase());
-      });
-      window.addEventListener('keyup', (e) => {
-        pressed.delete(e.key.toLowerCase());
-      });
-
-      const moveSpeedUnitsPerSecond = 1.5;
-      const fastMultiplier = 3.0; // hold Shift for faster move
-      let lastTimeMs = 0;
-      let fpsEma = 0; // smoothed FPS
-      const fpsAlpha = 0.1; // 0..1, higher = less smoothing
-      let lastScaleAdjustMs = 0;
-
-      function updateKeyboardNavigation(deltaSeconds) {
-        let forward = 0;
-        let right = 0;
-        let upAxis = 0;
-
-        if (pressed.has('w') || pressed.has('arrowup')) forward += 1;
-        if (pressed.has('s') || pressed.has('arrowdown')) forward -= 1;
-        if (pressed.has('d') || pressed.has('arrowright')) right += 1;
-        if (pressed.has('a') || pressed.has('arrowleft')) right -= 1;
-        if (pressed.has('e')) upAxis += 1;
-        if (pressed.has('q')) upAxis -= 1;
-
-        if (forward === 0 && right === 0 && upAxis === 0) return;
-
-        const speed = moveSpeedUnitsPerSecond * (pressed.has('shift') ? fastMultiplier : 1.0);
-        const distance = speed * deltaSeconds;
-
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir); // forward vector
-        const rightVec = dir.clone().cross(camera.up).normalize();
-        const upVec = camera.up.clone().normalize();
-
-        const move = new THREE.Vector3();
-        move.addScaledVector(dir, forward);
-        move.addScaledVector(rightVec, right);
-        move.addScaledVector(upVec, upAxis);
-        if (move.lengthSq() > 0) move.normalize().multiplyScalar(distance);
-
-        camera.position.add(move);
-        controls.target.add(move);
-        clampToBounds();
-      }
-
-      // HUD
-      const hud = document.getElementById('hud');
-      const usersList = document.getElementById('users-list');
-      
-      function updateHUD() {
-        const p = camera.position;
-        const pr = renderer.getPixelRatio().toFixed(2);
-        let heap = 'n/a';
-        // Chrome-only: performance.memory
-        if (performance && performance.memory && performance.memory.usedJSHeapSize) {
-          heap = `${(performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(0)}MB`;
-        }
-        const mem = renderer.info.memory;
-        const username = localUser ? localUser.username : 'Connecting...';
-        hud.textContent = `${username}\nfps: ${fpsEma.toFixed(1)}  pr: ${pr}  heap: ${heap}\ngeo: ${mem.geometries} tex: ${mem.textures}\npos: (${p.x.toFixed(2)}, ${p.y.toFixed(2)}, ${p.z.toFixed(2)})`;
-        
-        // Update users list
-        const userCount = remoteUsers.size + (localUser ? 1 : 0);
-        let usersText = `Users (${userCount}):\n`;
-        if (localUser) usersText += `• ${localUser.username} (you)\n`;
-        remoteUsers.forEach(user => {
-          usersText += `• ${user.username}\n`;
-        });
-        usersList.textContent = usersText;
-      }
-
-      // Animate
-      renderer.setAnimationLoop((time) => {
-        const dt = lastTimeMs === 0 ? 0 : (time - lastTimeMs) / 1000;
-        lastTimeMs = time;
-
-        if (dt > 0) {
-          const inst = 1 / dt;
-          fpsEma = fpsEma === 0 ? inst : fpsEma + fpsAlpha * (inst - fpsEma);
-        }
-
-        // Dynamic resolution scaling (adjust every ~500ms)
-        if (time - lastScaleAdjustMs > 500) {
-          let changed = false;
-          if (fpsEma && fpsEma < 30 && desiredPixelRatio > minPixelRatio) {
-            desiredPixelRatio = Math.max(minPixelRatio, desiredPixelRatio - 0.05);
-            changed = true;
-          } else if (fpsEma && fpsEma > 58 && desiredPixelRatio < maxPixelRatio) {
-            desiredPixelRatio = Math.min(maxPixelRatio, desiredPixelRatio + 0.05);
-            changed = true;
-          }
-          if (changed) {
-            renderer.setPixelRatio(desiredPixelRatio);
-          }
-          lastScaleAdjustMs = time;
-        }
-
-        updateKeyboardNavigation(dt);
-        controls.update();
-        clampToBounds();
-        updateHUD();
-        
-        // Update local user position
-        if (localUser) {
-          const newPos = {
-            x: parseFloat(camera.position.x.toFixed(2)),
-            y: parseFloat(camera.position.y.toFixed(2)),
-            z: parseFloat(camera.position.z.toFixed(2))
-          };
-          
-          // Only send update if position changed significantly
-          const oldPos = localUser.position;
-          const distance = Math.sqrt(
-            Math.pow(newPos.x - oldPos.x, 2) +
-            Math.pow(newPos.y - oldPos.y, 2) +
-            Math.pow(newPos.z - oldPos.z, 2)
-          );
-          
-          if (distance > 0.01) {
-            localUser.position = newPos;
-            socket.emit('update-position', newPos);
-          }
-        }
-        
-        renderer.render(scene, camera);
-      });
     </script>
   </body>
-  </html>
-
-
+</html>
