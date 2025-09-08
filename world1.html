@@ -81,8 +81,8 @@
 
       // Create user avatar (3D model)
       function createUserAvatar(userData) {
-        // Randomly assign a model type
-        const modelType = avatarModels[Math.floor(Math.random() * avatarModels.length)];
+        // Use the model type assigned by the server
+        const modelType = userData.modelType || avatarModels[Math.floor(Math.random() * avatarModels.length)];
         const modelData = loadedModels.get(modelType);
         
         if (!modelData) {
@@ -203,7 +203,12 @@
         console.log('Connected as:', userData.username);
       });
       
-      socket.on('existing-users', (users) => {
+      socket.on('existing-users', async (users) => {
+        // Wait for models to load if they haven't yet
+        while (loadedModels.size < avatarModels.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
         users.forEach(userData => {
           remoteUsers.set(userData.id, userData);
           const avatar = createUserAvatar(userData);
@@ -216,6 +221,11 @@
       });
       
       socket.on('user-joined', async (userData) => {
+        // Wait for models to load if they haven't yet
+        while (loadedModels.size < avatarModels.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
         remoteUsers.set(userData.id, userData);
         const avatar = createUserAvatar(userData);
         userAvatars.set(userData.id, avatar);

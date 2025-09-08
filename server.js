@@ -33,11 +33,13 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
   
   // Generate user data
+  const avatarTypes = ['alien', 'robot', 'dino'];
   const userData = {
     id: socket.id,
     username: generateUsername(),
     position: { x: 0, y: 0, z: -3 },
-    color: `hsl(${Math.random() * 360}, 70%, 50%)`
+    color: `hsl(${Math.random() * 360}, 70%, 50%)`,
+    modelType: avatarTypes[Math.floor(Math.random() * avatarTypes.length)]
   };
   
   users.set(socket.id, userData);
