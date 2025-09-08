@@ -303,7 +303,24 @@
           );
           
           const isMoving = distance > 0.001;
-          updateUserAnimation(data.id, isMoving);
+          
+          // Clear any existing idle timer for this user
+          if (userMovementTimers.has(data.id)) {
+            clearTimeout(userMovementTimers.get(data.id));
+            userMovementTimers.delete(data.id);
+          }
+          
+          if (isMoving) {
+            // User is moving - immediately switch to walking
+            updateUserAnimation(data.id, true);
+          } else {
+            // User stopped - set a timer to switch to idle after delay
+            const timer = setTimeout(() => {
+              updateUserAnimation(data.id, false);
+              userMovementTimers.delete(data.id);
+            }, 800); // 800ms delay to avoid rapid switching
+            userMovementTimers.set(data.id, timer);
+          }
         }
       });
       
@@ -445,6 +462,10 @@
       let fpsEma = 0; // smoothed FPS
       const fpsAlpha = 0.1; // 0..1, higher = less smoothing
       let lastScaleAdjustMs = 0;
+      
+      // Local user animation tracking
+      let isLocalUserMoving = false;
+      const userMovementTimers = new Map();
 
       function updateKeyboardNavigation(deltaSeconds) {
         let forward = 0;
@@ -458,7 +479,15 @@
         if (pressed.has('e')) upAxis += 1;
         if (pressed.has('q')) upAxis -= 1;
 
-        if (forward === 0 && right === 0 && upAxis === 0) return;
+        const currentlyMoving = (forward !== 0 || right !== 0 || upAxis !== 0);
+        
+        // Update local user animation when movement state changes
+        if (localUser && currentlyMoving !== isLocalUserMoving) {
+          isLocalUserMoving = currentlyMoving;
+          updateUserAnimation(localUser.id, isLocalUserMoving);
+        }
+        
+        if (!currentlyMoving) return;
 
         const speed = moveSpeedUnitsPerSecond * (pressed.has('shift') ? fastMultiplier : 1.0);
         const distance = speed * deltaSeconds;
