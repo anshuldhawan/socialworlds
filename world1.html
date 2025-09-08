@@ -26,15 +26,43 @@
       import * as THREE from 'three';
       import { SplatMesh } from '@sparkjsdev/spark';
       import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
       // Multiplayer setup
       const socket = io();
       let localUser = null;
       const remoteUsers = new Map();
       const userAvatars = new Map();
+      const userAnimationMixers = new Map();
+      const userAnimations = new Map();
       const peerConnections = new Map();
       let localStream = null;
       let micEnabled = true;
+      
+      // Avatar models and loader
+      const gltfLoader = new GLTFLoader();
+      const avatarModels = ['alien', 'robot', 'dino'];
+      const loadedModels = new Map();
+      
+      // Load all avatar models
+      async function loadAvatarModels() {
+        const promises = avatarModels.map(modelName => 
+          new Promise((resolve) => {
+            gltfLoader.load(`./models/${modelName}.glb`, (gltf) => {
+              loadedModels.set(modelName, gltf);
+              resolve(gltf);
+            }, undefined, (error) => {
+              console.warn(`Failed to load ${modelName}:`, error);
+              resolve(null);
+            });
+          })
+        );
+        await Promise.all(promises);
+        console.log('All avatar models loaded:', loadedModels.size);
+      }
+      
+      // Initialize model loading
+      loadAvatarModels();
 
       // Audio setup
       async function setupAudio() {
@@ -51,12 +79,62 @@
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
       };
 
-      // Create user avatar (blob)
+      // Create user avatar (3D model)
       function createUserAvatar(userData) {
-        const geometry = new THREE.SphereGeometry(0.1, 16, 16);
-        const material = new THREE.MeshBasicMaterial({ color: userData.color });
-        const avatar = new THREE.Mesh(geometry, material);
+        // Randomly assign a model type
+        const modelType = avatarModels[Math.floor(Math.random() * avatarModels.length)];
+        const modelData = loadedModels.get(modelType);
+        
+        if (!modelData) {
+          console.warn(`Model ${modelType} not loaded, using fallback sphere`);
+          // Fallback to sphere if model not loaded
+          const geometry = new THREE.SphereGeometry(0.1, 16, 16);
+          const material = new THREE.MeshBasicMaterial({ color: userData.color });
+          const avatar = new THREE.Mesh(geometry, material);
+          avatar.position.set(userData.position.x, userData.position.y, userData.position.z);
+          return avatar;
+        }
+        
+        // Clone the model
+        const avatar = modelData.scene.clone();
         avatar.position.set(userData.position.x, userData.position.y, userData.position.z);
+        
+        // Scale the model appropriately
+        avatar.scale.setScalar(0.5);
+        
+        // Set up animations
+        const mixer = new THREE.AnimationMixer(avatar);
+        userAnimationMixers.set(userData.id, mixer);
+        
+        const animations = {
+          idle: null,
+          walking: null
+        };
+        
+        // Find idle and walking animations
+        modelData.animations.forEach(clip => {
+          const name = clip.name.toLowerCase();
+          if (name.includes('idle') || name.includes('rest') || name.includes('stand')) {
+            animations.idle = mixer.clipAction(clip);
+          } else if (name.includes('walk') || name.includes('run') || name.includes('move')) {
+            animations.walking = mixer.clipAction(clip);
+          }
+        });
+        
+        // If no specific animations found, use the first available ones
+        if (!animations.idle && modelData.animations.length > 0) {
+          animations.idle = mixer.clipAction(modelData.animations[0]);
+        }
+        if (!animations.walking && modelData.animations.length > 1) {
+          animations.walking = mixer.clipAction(modelData.animations[1]);
+        }
+        
+        userAnimations.set(userData.id, animations);
+        
+        // Start with idle animation
+        if (animations.idle) {
+          animations.idle.play();
+        }
         
         // Add username label
         const canvas = document.createElement('canvas');
@@ -71,9 +149,16 @@
         const texture = new THREE.CanvasTexture(canvas);
         const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
         const sprite = new THREE.Sprite(spriteMaterial);
-        sprite.position.set(0, 0.2, 0);
-        sprite.scale.set(0.3, 0.075, 1);
+        sprite.position.set(0, 1, 0);
+        sprite.scale.set(0.5, 0.125, 1);
         avatar.add(sprite);
+        
+        // Store previous position for movement detection
+        avatar.userData = {
+          ...userData,
+          previousPosition: { ...userData.position },
+          isMoving: false
+        };
         
         return avatar;
       }
@@ -149,6 +234,15 @@
           scene.remove(avatar);
           userAvatars.delete(userId);
         }
+        
+        // Clean up animation mixer
+        const mixer = userAnimationMixers.get(userId);
+        if (mixer) {
+          mixer.stopAllAction();
+          userAnimationMixers.delete(userId);
+        }
+        userAnimations.delete(userId);
+        
         remoteUsers.delete(userId);
         
         // Clean up WebRTC connection
@@ -167,8 +261,19 @@
         const user = remoteUsers.get(data.id);
         const avatar = userAvatars.get(data.id);
         if (user && avatar) {
+          const oldPos = user.position;
           user.position = data.position;
           avatar.position.set(data.position.x, data.position.y, data.position.z);
+          
+          // Calculate movement for animation
+          const distance = Math.sqrt(
+            Math.pow(data.position.x - oldPos.x, 2) +
+            Math.pow(data.position.y - oldPos.y, 2) +
+            Math.pow(data.position.z - oldPos.z, 2)
+          );
+          
+          const isMoving = distance > 0.001;
+          updateUserAnimation(data.id, isMoving);
         }
       });
       
@@ -363,6 +468,26 @@
         });
         usersList.textContent = usersText;
       }
+      
+      // Animation management
+      function updateUserAnimation(userId, isMoving) {
+        const animations = userAnimations.get(userId);
+        if (!animations) return;
+        
+        if (isMoving) {
+          // Switch to walking animation
+          if (animations.idle && animations.walking) {
+            animations.idle.stop();
+            animations.walking.play();
+          }
+        } else {
+          // Switch to idle animation
+          if (animations.idle && animations.walking) {
+            animations.walking.stop();
+            animations.idle.play();
+          }
+        }
+      }
 
       // Animate
       renderer.setAnimationLoop((time) => {
@@ -394,6 +519,11 @@
         controls.update();
         clampToBounds();
         updateHUD();
+        
+        // Update animation mixers
+        userAnimationMixers.forEach(mixer => {
+          mixer.update(dt);
+        });
         
         // Update local user position
         if (localUser) {
