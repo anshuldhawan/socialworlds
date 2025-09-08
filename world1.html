@@ -112,28 +112,48 @@
         };
         
         // Find idle and walking animations
-        modelData.animations.forEach(clip => {
+        console.log('Available animations for', modelType, ':', modelData.animations.map(a => a.name));
+        
+        modelData.animations.forEach((clip, index) => {
           const name = clip.name.toLowerCase();
-          if (name.includes('idle') || name.includes('rest') || name.includes('stand')) {
+          console.log(`Animation ${index}: ${clip.name}`);
+          
+          if (name.includes('idle') || name.includes('rest') || name.includes('stand') || index === 0) {
             animations.idle = mixer.clipAction(clip);
-          } else if (name.includes('walk') || name.includes('run') || name.includes('move')) {
+            console.log('Set idle animation:', clip.name);
+          } else if (name.includes('walk') || name.includes('run') || name.includes('move') || (!animations.walking && index === 1)) {
             animations.walking = mixer.clipAction(clip);
+            console.log('Set walking animation:', clip.name);
           }
         });
         
-        // If no specific animations found, use the first available ones
+        // Fallback: use first animation as idle if none found
         if (!animations.idle && modelData.animations.length > 0) {
           animations.idle = mixer.clipAction(modelData.animations[0]);
+          console.log('Fallback idle animation:', modelData.animations[0].name);
         }
+        
+        // Fallback: use second animation as walking if none found
         if (!animations.walking && modelData.animations.length > 1) {
           animations.walking = mixer.clipAction(modelData.animations[1]);
+          console.log('Fallback walking animation:', modelData.animations[1].name);
         }
         
         userAnimations.set(userData.id, animations);
         
-        // Start with idle animation
+        // Configure and start idle animation
         if (animations.idle) {
+          animations.idle.setLoop(THREE.LoopRepeat);
           animations.idle.play();
+          console.log('Started idle animation for', userData.username);
+        } else {
+          console.warn('No idle animation found for', userData.username);
+        }
+        
+        // Configure walking animation but don't play it yet
+        if (animations.walking) {
+          animations.walking.setLoop(THREE.LoopRepeat);
+          console.log('Configured walking animation for', userData.username);
         }
         
         // Add username label
@@ -482,19 +502,35 @@
       // Animation management
       function updateUserAnimation(userId, isMoving) {
         const animations = userAnimations.get(userId);
-        if (!animations) return;
+        if (!animations) {
+          console.warn('No animations found for user:', userId);
+          return;
+        }
+        
+        const user = remoteUsers.get(userId) || localUser;
+        const username = user ? user.username : userId;
         
         if (isMoving) {
           // Switch to walking animation
-          if (animations.idle && animations.walking) {
-            animations.idle.stop();
+          if (animations.walking) {
+            if (animations.idle) {
+              animations.idle.stop();
+            }
             animations.walking.play();
+            console.log(`${username}: switched to walking`);
+          } else {
+            console.warn(`${username}: no walking animation available`);
           }
         } else {
           // Switch to idle animation
-          if (animations.idle && animations.walking) {
-            animations.walking.stop();
+          if (animations.idle) {
+            if (animations.walking) {
+              animations.walking.stop();
+            }
             animations.idle.play();
+            console.log(`${username}: switched to idle`);
+          } else {
+            console.warn(`${username}: no idle animation available`);
           }
         }
       }
