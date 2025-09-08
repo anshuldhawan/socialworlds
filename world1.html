@@ -325,8 +325,14 @@
       
       socket.on('ice-candidate', async (data) => {
         const pc = peerConnections.get(data.sender);
-        if (pc) {
-          await pc.addIceCandidate(data.candidate);
+        if (pc && pc.remoteDescription) {
+          try {
+            await pc.addIceCandidate(data.candidate);
+          } catch (error) {
+            console.warn('Failed to add ICE candidate:', error);
+          }
+        } else {
+          console.warn('Received ICE candidate before remote description was set');
         }
       });
 
