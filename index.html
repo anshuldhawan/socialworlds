@@ -178,12 +178,56 @@
         content: '✨';
         font-size: 1.2em;
       }
+      
+      .search-section {
+        margin: 40px 0 20px 0;
+        text-align: center;
+      }
+      
+      #world-search {
+        width: 100%;
+        max-width: 400px;
+        padding: 15px 20px;
+        font-size: 1.1em;
+        border: none;
+        border-radius: 25px;
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        transition: all 0.3s ease;
+      }
+      
+      #world-search::placeholder {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      
+      #world-search:focus {
+        outline: none;
+        background: rgba(255, 255, 255, 0.25);
+        border-color: rgba(255, 255, 255, 0.5);
+        transform: scale(1.02);
+      }
+      
+      .section-header {
+        font-size: 2em;
+        margin: 30px 0 20px 0;
+        text-align: center;
+        color: #64b5f6;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      }
     </style>
   </head>
   <body>
     <div class="container">
       <h1>🌍 Chat Worlds</h1>
-      <p class="subtitle">hangout in the world you like</p>
+      <p class="subtitle">Hangout in the world you like</p>
+      
+      <div class="search-section">
+        <input type="text" id="world-search" placeholder="Search worlds..." />
+      </div>
+      
+      <h2 class="section-header">Featured worlds</h2>
       
       <div class="worlds-grid">
         <div class="world-card" onclick="enterWorld('world1')">
