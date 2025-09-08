@@ -58,15 +58,29 @@
       .world-image {
         width: 100%;
         height: 200px;
-        background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
         border-radius: 10px;
         margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 4em;
         position: relative;
         overflow: hidden;
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+      
+      .world-image.stadium {
+        background-image: url('./images/stadium.png');
+      }
+      
+      .world-image.cafe {
+        background-image: url('./images/cafe.png');
+      }
+      
+      .world-image.cafe2 {
+        background-image: url('./images/cafe2.png');
+      }
+      
+      .world-image.scene {
+        background-image: url('./images/scene.webp');
       }
       
       .world-image::before {
@@ -76,8 +90,12 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><radialGradient id="a" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="rgba(255,255,255,0.3)"/><stop offset="100%" stop-color="rgba(255,255,255,0)"/></radialGradient></defs><circle cx="20" cy="30" r="2" fill="white" opacity="0.6"/><circle cx="80" cy="20" r="1.5" fill="white" opacity="0.4"/><circle cx="60" cy="70" r="1" fill="white" opacity="0.5"/><circle cx="30" cy="80" r="1.5" fill="white" opacity="0.3"/></svg>');
-        animation: sparkle 3s ease-in-out infinite;
+        background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.3) 100%);
+        transition: opacity 0.3s ease;
+      }
+      
+      .world-card:hover .world-image::before {
+        opacity: 0.7;
       }
       
       @keyframes sparkle {
@@ -169,37 +187,37 @@
       
       <div class="worlds-grid">
         <div class="world-card" onclick="enterWorld('world1')">
-          <div class="world-image">🏔️</div>
-          <div class="world-title">Mountain Landscape</div>
+          <div class="world-image stadium"></div>
+          <div class="world-title">Stadium Arena</div>
           <div class="world-description">
-            Explore a stunning 3D gaussian splat rendering of a mountain landscape. Move around with WASD keys, talk with other explorers using voice chat, and discover hidden details in this immersive environment.
+            Experience the energy of a professional basketball arena with your friends. Walk the court, explore the stands, and feel the excitement of game day in this immersive 3D environment.
           </div>
           <button class="enter-button">Enter World</button>
         </div>
         
         <div class="world-card coming-soon">
-          <div class="world-image">🏙️</div>
-          <div class="world-title">City Explorer</div>
+          <div class="world-image cafe"></div>
+          <div class="world-title">Urban Cafe</div>
           <div class="world-description">
-            Navigate through an urban environment with towering buildings and bustling streets. Perfect for group exploration and virtual meetups.
+            Meet up in a cozy neighborhood cafe with warm lighting and city vibes. Perfect for casual conversations and virtual coffee dates with friends.
           </div>
           <button class="enter-button">Coming Soon</button>
         </div>
         
         <div class="world-card coming-soon">
-          <div class="world-image">🌊</div>
-          <div class="world-title">Ocean Depths</div>
+          <div class="world-image cafe2"></div>
+          <div class="world-title">The Doge Den</div>
           <div class="world-description">
-            Dive into the deep blue sea and discover underwater wonders. Experience the tranquility of the ocean with your friends.
+            Hang out in this crypto-themed hangout spot with festive lighting and community vibes. A fun place to chat about the latest trends and memes.
           </div>
           <button class="enter-button">Coming Soon</button>
         </div>
         
         <div class="world-card coming-soon">
-          <div class="world-image">🌌</div>
-          <div class="world-title">Space Station</div>
+          <div class="world-image scene"></div>
+          <div class="world-title">Tropical Paradise</div>
           <div class="world-description">
-            Float through a futuristic space station and gaze at the stars. Perfect for cosmic conversations and zero-gravity exploration.
+            Escape to a beautiful tropical lagoon with crystal clear waters and ancient ruins. Explore paradise with your friends in this serene 3D world.
           </div>
           <button class="enter-button">Coming Soon</button>
         </div>
