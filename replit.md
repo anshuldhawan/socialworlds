@@ -15,7 +15,14 @@ This is a multiplayer 3D visualization web application built with Three.js and t
 - Deployment configured for autoscale
 - Real-time multiplayer functionality with voice chat
 
-## Recent Changes (Sep 7, 2025)
+## Recent Changes (Sep 8, 2025)
+- Created landing page with world selection interface
+- Restructured app flow: landing page → world selection → multiplayer experience
+- Moved 3D world to dedicated URL (/world1.html) for direct access
+- Added attractive world cards with preview images and descriptions
+- Maintained all multiplayer functionality on the new world page
+
+## Previous Changes (Sep 7, 2025)  
 - Set up Replit environment with proper port configuration
 - Added complete multiplayer functionality with voice communication
 - Implemented real-time user synchronization and blob avatars
