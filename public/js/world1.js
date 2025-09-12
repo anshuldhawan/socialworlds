@@ -11,7 +11,7 @@ const userAnimationMixers = new Map();
 const userAnimations = new Map();
 const peerConnections = new Map();
 let localStream = null;
-let micEnabled = true;
+let micEnabled = false;
 
 // Avatar models and loader
 const gltfLoader = new GLTFLoader();
@@ -42,6 +42,16 @@ loadAvatarModels();
 async function setupAudio() {
   try {
     localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    // Start with mic muted
+    localStream.getAudioTracks().forEach(track => {
+      track.enabled = micEnabled;
+    });
+    // Reflect initial muted state in the UI if button exists
+    const button = document.getElementById('mic-toggle');
+    if (button) {
+      button.textContent = micEnabled ? '🎤 ON' : '🎤 OFF';
+      button.style.background = micEnabled ? '#00ff00' : '#ff0000';
+    }
   } catch (err) {
     console.warn('Could not access microphone:', err);
   }
@@ -372,7 +382,37 @@ world.matrixAutoUpdate = false;
 cameraTarget.set(0, 0, -3);
 camera.lookAt(cameraTarget);
 
-// Free camera movement: no bounds/clamping
+// Collision + navigation helpers
+const raycaster = new THREE.Raycaster();
+// SplatMesh is rendered as points; set a threshold so point intersections are detected
+raycaster.params.Points = raycaster.params.Points || {};
+raycaster.params.Points.threshold = 0.05; // tweak if needed based on scene scale
+
+const collisionSettings = {
+  enabled: true,
+  radius: 0.12 // treat camera as a small sphere
+};
+
+function adjustPositionWithCollision(startVec, desiredVec) {
+  if (!collisionSettings.enabled) return desiredVec;
+  const from = startVec.clone();
+  const to = desiredVec.clone();
+  const delta = new THREE.Vector3().subVectors(to, from);
+  const distance = delta.length();
+  if (distance === 0) return desiredVec;
+
+  const direction = delta.clone().normalize();
+  raycaster.set(from, direction);
+  const hits = raycaster.intersectObject(world, false);
+  if (hits && hits.length > 0) {
+    const hit = hits[0];
+    if (hit.distance <= distance + collisionSettings.radius) {
+      const allowed = Math.max(0, hit.distance - collisionSettings.radius);
+      return from.addScaledVector(direction, allowed);
+    }
+  }
+  return desiredVec;
+}
 
 // Handle resize
 function onWindowResize() {
@@ -409,7 +449,10 @@ function rotateCameraByPointer(deltaX, deltaY) {
     Math.PI - 0.01
   );
   offset.setFromSpherical(spherical);
-  camera.position.copy(cameraTarget).add(offset);
+  const oldPos = camera.position.clone();
+  const desiredPos = new THREE.Vector3().copy(cameraTarget).add(offset);
+  const adjusted = adjustPositionWithCollision(oldPos, desiredPos);
+  camera.position.copy(adjusted);
 }
 
 renderer.domElement.style.cursor = 'grab';
@@ -490,8 +533,14 @@ function updateKeyboardNavigation(deltaSeconds) {
   move.addScaledVector(upVec, upAxis);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(distance);
 
-  camera.position.add(move);
-  cameraTarget.add(move);
+  if (move.lengthSq() > 0) {
+    const start = camera.position.clone();
+    const desired = start.clone().add(move);
+    const adjusted = adjustPositionWithCollision(start, desired);
+    const applied = new THREE.Vector3().subVectors(adjusted, start);
+    camera.position.copy(adjusted);
+    cameraTarget.add(applied);
+  }
 }
 
 // HUD
