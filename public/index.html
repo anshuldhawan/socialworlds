@@ -200,6 +200,12 @@
       <h2 class="section-header">Featured worlds</h2>
       
       <div class="worlds-grid">
+        <div class="world-card" onclick="enterWorld('beach')">
+          <div class="world-image scene"></div>
+          <div class="world-title">Explore worlds</div>
+          <button class="enter-button">Enter World</button>
+        </div>
+        
         <div class="world-card" onclick="enterWorld('world1')">
           <div class="world-image stadium"></div>
           <div class="world-title">Warriors Fans</div>
@@ -217,12 +223,6 @@
           <div class="world-title">Dogecoin maniacs</div>
           <button class="enter-button">Coming Soon</button>
         </div>
-        
-        <div class="world-card coming-soon">
-          <div class="world-image scene"></div>
-          <div class="world-title">Explore worlds</div>
-          <button class="enter-button">Coming Soon</button>
-        </div>
       </div>
     </div>
     
@@ -230,6 +230,8 @@
       function enterWorld(worldName) {
         if (worldName === 'world1') {
           window.location.href = '/world1.html';
+        } else if (worldName === 'beach') {
+          window.location.href = '/world1.html?spz=beach.spz';
         }
       }
     </script>

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { SplatMesh } from '@sparkjsdev/spark';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Multiplayer setup
@@ -356,15 +355,13 @@ renderer.debug.checkShaderErrors = false;
 // Basic lighting isn't required for splats, but adding a neutral background helps
 renderer.setClearColor(0x000000, 1);
 
-// Controls
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.05;
-controls.minDistance = 0.2;
-controls.maxDistance = 50;
+// Camera target (replaces OrbitControls target)
+const cameraTarget = new THREE.Vector3();
 
-// Load local SPZ file
-const splatURL = './world1.spz';
+// Load SPZ file, optionally from query param
+const params = new URLSearchParams(window.location.search);
+const spzParam = params.get('spz');
+const splatURL = `./${spzParam || 'world1.spz'}`;
 const world = new SplatMesh({ url: splatURL });
 // Orient and position so it's visible
 world.quaternion.set(1, 0, 0, 0);
@@ -372,46 +369,10 @@ world.position.set(0, 0, -3);
 scene.add(world);
 world.updateMatrix();
 world.matrixAutoUpdate = false;
-controls.target.set(0, 0, -3);
-controls.update();
+cameraTarget.set(0, 0, -3);
+camera.lookAt(cameraTarget);
 
-// Camera bounds: keep camera and target within a sphere around the mesh center
-const boundsCenter = controls.target.clone();
-let boundsRadius = 2.0; // fallback radius if we can't infer
-// Try to infer radius if available on the object
-try {
-  if (world.geometry && world.geometry.boundingSphere) {
-    world.geometry.computeBoundingSphere();
-    if (world.geometry.boundingSphere && world.geometry.boundingSphere.radius) {
-      boundsRadius = world.geometry.boundingSphere.radius;
-    }
-  } else if (world.boundingSphere && world.boundingSphere.radius) {
-    boundsRadius = world.boundingSphere.radius;
-  }
-} catch (_) {}
-// Leave a small margin so we don't clip the boundary exactly
-const boundsMargin = 0.02;
-controls.maxDistance = Math.max(0.05, boundsRadius - boundsMargin);
-
-function clampToBounds() {
-  const maxDist = Math.max(0.05, boundsRadius - boundsMargin);
-  const offset = new THREE.Vector3().subVectors(camera.position, boundsCenter);
-  const dist = offset.length();
-  if (dist > maxDist) {
-    offset.normalize().multiplyScalar(maxDist);
-    camera.position.copy(boundsCenter).add(offset);
-  }
-  const tOffset = new THREE.Vector3().subVectors(controls.target, boundsCenter);
-  const tDist = tOffset.length();
-  const tMax = Math.max(0.0, boundsRadius - boundsMargin);
-  if (tDist > tMax) {
-    tOffset.normalize().multiplyScalar(tMax);
-    controls.target.copy(boundsCenter).add(tOffset);
-  }
-}
-controls.addEventListener('change', clampToBounds);
-// Expose a simple tuner in console if needed
-window.setBoundsRadius = (r) => { boundsRadius = Math.max(0.1, Number(r) || boundsRadius); controls.maxDistance = Math.max(0.05, boundsRadius - boundsMargin); clampToBounds(); };
+// Free camera movement: no bounds/clamping
 
 // Handle resize
 function onWindowResize() {
@@ -429,6 +390,53 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => {
   pressed.delete(e.key.toLowerCase());
+});
+
+// Pointer-based camera rotation (mouse/trackpad drag)
+let isPointerDown = false;
+let lastPointerX = 0;
+let lastPointerY = 0;
+const rotationSensitivity = 0.003; // radians per pixel
+
+function rotateCameraByPointer(deltaX, deltaY) {
+  const offset = new THREE.Vector3().subVectors(camera.position, cameraTarget);
+  const spherical = new THREE.Spherical().setFromVector3(offset);
+  // Horizontal: adjust azimuth (theta). Vertical: adjust polar (phi)
+  spherical.theta -= deltaX * rotationSensitivity;
+  spherical.phi = THREE.MathUtils.clamp(
+    spherical.phi - deltaY * rotationSensitivity,
+    0.01,
+    Math.PI - 0.01
+  );
+  offset.setFromSpherical(spherical);
+  camera.position.copy(cameraTarget).add(offset);
+}
+
+renderer.domElement.style.cursor = 'grab';
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  isPointerDown = true;
+  lastPointerX = e.clientX;
+  lastPointerY = e.clientY;
+  renderer.domElement.style.cursor = 'grabbing';
+  renderer.domElement.setPointerCapture(e.pointerId);
+  e.preventDefault();
+});
+
+renderer.domElement.addEventListener('pointerup', (e) => {
+  isPointerDown = false;
+  renderer.domElement.style.cursor = 'grab';
+  try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+  e.preventDefault();
+});
+
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!isPointerDown) return;
+  const dx = e.clientX - lastPointerX;
+  const dy = e.clientY - lastPointerY;
+  lastPointerX = e.clientX;
+  lastPointerY = e.clientY;
+  rotateCameraByPointer(dx, dy);
+  e.preventDefault();
 });
 
 const moveSpeedUnitsPerSecond = 1.5;
@@ -467,20 +475,23 @@ function updateKeyboardNavigation(deltaSeconds) {
   const speed = moveSpeedUnitsPerSecond * (pressed.has('shift') ? fastMultiplier : 1.0);
   const distance = speed * deltaSeconds;
 
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir); // forward vector
-  const rightVec = dir.clone().cross(camera.up).normalize();
-  const upVec = camera.up.clone().normalize();
+  // Constrain WASD movement to horizontal plane (XZ)
+  const worldUp = new THREE.Vector3(0, 1, 0);
+  const forwardVec = new THREE.Vector3().subVectors(cameraTarget, camera.position);
+  forwardVec.y = 0; // remove vertical component
+  if (forwardVec.lengthSq() === 0) forwardVec.set(0, 0, -1); // fallback
+  forwardVec.normalize();
+  const rightVec = forwardVec.clone().cross(worldUp).normalize();
+  const upVec = worldUp.clone();
 
   const move = new THREE.Vector3();
-  move.addScaledVector(dir, forward);
+  move.addScaledVector(forwardVec, forward);
   move.addScaledVector(rightVec, right);
   move.addScaledVector(upVec, upAxis);
   if (move.lengthSq() > 0) move.normalize().multiplyScalar(distance);
 
   camera.position.add(move);
-  controls.target.add(move);
-  clampToBounds();
+  cameraTarget.add(move);
 }
 
 // HUD
@@ -572,8 +583,7 @@ renderer.setAnimationLoop((time) => {
   }
 
   updateKeyboardNavigation(dt);
-  controls.update();
-  clampToBounds();
+  camera.lookAt(cameraTarget);
   updateHUD();
   
   // Update animation mixers
