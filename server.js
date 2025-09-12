@@ -1,20 +1,20 @@
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
-const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
+const allowedOrigin = process.env.NODE_ENV === 'production' ? (process.env.CORS_ORIGIN || 'https://your-domain.com') : '*';
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: allowedOrigin,
     methods: ["GET", "POST"]
   }
 });
 
-// Serve static files
-app.use(express.static('.'));
+// Serve static files from public directory only
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Generate random usernames
 const adjectives = ['Swift', 'Bright', 'Bold', 'Quick', 'Calm', 'Cool', 'Sharp', 'Wild', 'Free', 'Wise'];
@@ -28,6 +28,11 @@ function generateUsername() {
 
 // Store connected users
 const users = new Map();
+// Basic server-side movement hygiene
+const lastUpdateAt = new Map();
+const POSITION_LIMIT = 50; // world bounds clamp
+const UPDATE_INTERVAL_MS = 50; // 20 updates/sec per client
+const clamp = (val, min, max) => Math.max(min, Math.min(max, val));
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -53,12 +58,27 @@ io.on('connection', (socket) => {
   // Notify others about new user
   socket.broadcast.emit('user-joined', userData);
   
-  // Handle position updates
+  // Handle position updates (rate-limited + clamped)
   socket.on('update-position', (position) => {
+    const now = Date.now();
+    const prev = lastUpdateAt.get(socket.id) || 0;
+    if (now - prev < UPDATE_INTERVAL_MS) return; // drop overly frequent updates
+    lastUpdateAt.set(socket.id, now);
+
+    if (!position || typeof position.x !== 'number' || typeof position.y !== 'number' || typeof position.z !== 'number') {
+      return;
+    }
+
+    const clamped = {
+      x: clamp(position.x, -POSITION_LIMIT, POSITION_LIMIT),
+      y: clamp(position.y, -POSITION_LIMIT, POSITION_LIMIT),
+      z: clamp(position.z, -POSITION_LIMIT, POSITION_LIMIT)
+    };
+
     const user = users.get(socket.id);
     if (user) {
-      user.position = position;
-      socket.broadcast.emit('user-moved', { id: socket.id, position });
+      user.position = clamped;
+      socket.broadcast.emit('user-moved', { id: socket.id, position: clamped });
     }
   });
   
@@ -88,6 +108,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     users.delete(socket.id);
+    lastUpdateAt.delete(socket.id);
     socket.broadcast.emit('user-left', socket.id);
   });
 });

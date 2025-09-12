@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>World1 • Spark + Three.js</title>
+    <style> body { margin: 0; overflow: hidden; } html, body, canvas { width: 100%; height: 100%; } </style>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.174.0/three.module.js",
+          "@sparkjsdev/spark": "https://sparkjs.dev/releases/spark/0.1.8/spark.module.js",
+          "three/addons/": "https://unpkg.com/three@0.174.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="hud" style="position:fixed;left:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
+    <div id="users-list" style="position:fixed;right:8px;top:8px;color:#fff;background:rgba(0,0,0,0.5);padding:6px 8px;border-radius:4px;font:12px/1.4 monospace;z-index:10;pointer-events:none;white-space:pre"></div>
+    <div id="audio-controls" style="position:fixed;bottom:8px;left:8px;z-index:10;">
+      <button id="mic-toggle" style="padding:8px 12px;background:#00ff00;border:none;border-radius:4px;color:black;font-weight:bold;">🎤 ON</button>
+    </div>
+    <script type="module" src="/js/world1.js"></script>
+  </body>
+  </html>
+
+
