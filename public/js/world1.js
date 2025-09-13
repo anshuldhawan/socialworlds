@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { SplatMesh } from '@sparkjsdev/spark';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
 // Multiplayer setup
 const socket = io();
@@ -79,8 +80,13 @@ function createUserAvatar(userData) {
     return avatar;
   }
   
-  // Clone the model
-  const avatar = modelData.scene.clone();
+  // Clone the model correctly for skinned meshes
+  const avatar = SkeletonUtils.clone(modelData.scene);
+  avatar.traverse((obj) => {
+    if (obj.isSkinnedMesh || obj.type === 'SkinnedMesh') {
+      obj.frustumCulled = false;
+    }
+  });
   avatar.position.set(userData.position.x, userData.position.y, userData.position.z);
   
   // Scale the model appropriately
@@ -95,49 +101,34 @@ function createUserAvatar(userData) {
     walking: null
   };
   
-  // Find idle and walking animations
-  console.log('Available animations for', modelType, ':', modelData.animations.map(a => a.name));
+  // Prefer original clips, else try clips embedded on clone
+  const clips = modelData.animations && modelData.animations.length > 0 ? modelData.animations : (avatar.animations || []);
+  console.log('Available animations for', modelType, ':', clips.map(a => a.name));
   
-  modelData.animations.forEach((clip, index) => {
-    const name = clip.name.toLowerCase();
-    console.log(`Animation ${index}: ${clip.name}`);
-    
+  clips.forEach((clip, index) => {
+    const name = (clip.name || '').toLowerCase();
     if (name.includes('idle') || name.includes('rest') || name.includes('stand') || index === 0) {
       animations.idle = mixer.clipAction(clip);
-      console.log('Set idle animation:', clip.name);
     } else if (name.includes('walk') || name.includes('run') || name.includes('move') || (!animations.walking && index === 1)) {
       animations.walking = mixer.clipAction(clip);
-      console.log('Set walking animation:', clip.name);
     }
   });
   
-  // Fallback: use first animation as idle if none found
-  if (!animations.idle && modelData.animations.length > 0) {
-    animations.idle = mixer.clipAction(modelData.animations[0]);
-    console.log('Fallback idle animation:', modelData.animations[0].name);
+  // Fallbacks
+  if (!animations.idle && clips.length > 0) {
+    animations.idle = mixer.clipAction(clips[0]);
   }
-  
-  // Fallback: use second animation as walking if none found
-  if (!animations.walking && modelData.animations.length > 1) {
-    animations.walking = mixer.clipAction(modelData.animations[1]);
-    console.log('Fallback walking animation:', modelData.animations[1].name);
+  if (!animations.walking && clips.length > 1) {
+    animations.walking = mixer.clipAction(clips[1]);
   }
   
   userAnimations.set(userData.id, animations);
   
-  // Configure and start idle animation
   if (animations.idle) {
-    animations.idle.setLoop(THREE.LoopRepeat);
-    animations.idle.play();
-    console.log('Started idle animation for', userData.username);
-  } else {
-    console.warn('No idle animation found for', userData.username);
+    animations.idle.reset().setLoop(THREE.LoopRepeat).play();
   }
-  
-  // Configure walking animation but don't play it yet
   if (animations.walking) {
     animations.walking.setLoop(THREE.LoopRepeat);
-    console.log('Configured walking animation for', userData.username);
   }
   
   // Add username label
@@ -202,9 +193,29 @@ async function createPeerConnection(targetUserId) {
 }
 
 // Socket event handlers
-socket.on('user-data', (userData) => {
+socket.on('user-data', async (userData) => {
   localUser = userData;
   console.log('Connected as:', userData.username);
+
+  // Ensure avatar models are loaded before creating local avatar
+  while (loadedModels.size < avatarModels.length) {
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+
+  // Spawn local user's avatar at the exact camera position
+  const spawnPos = camera.position.clone();
+  const localAvatar = createUserAvatar({
+    ...localUser,
+    position: { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z }
+  });
+  localAvatar.renderOrder = 1;
+  userAvatars.set(localUser.id, localAvatar);
+  scene.add(localAvatar);
+  // Match camera orientation
+  localAvatar.quaternion.copy(camera.quaternion);
+  // Keep localUser position in sync
+  localUser.position = { x: spawnPos.x, y: spawnPos.y, z: spawnPos.z };
+  console.log('Camera pos:', camera.position.toArray(), 'Spawn pos:', localAvatar.position.toArray());
 });
  
 socket.on('existing-users', async (users) => {
@@ -216,6 +227,7 @@ socket.on('existing-users', async (users) => {
   users.forEach(userData => {
     remoteUsers.set(userData.id, userData);
     const avatar = createUserAvatar(userData);
+    avatar.renderOrder = 1;
     userAvatars.set(userData.id, avatar);
     scene.add(avatar);
     
@@ -232,6 +244,7 @@ socket.on('user-joined', async (userData) => {
   
   remoteUsers.set(userData.id, userData);
   const avatar = createUserAvatar(userData);
+  avatar.renderOrder = 1;
   userAvatars.set(userData.id, avatar);
   scene.add(avatar);
   
@@ -365,6 +378,13 @@ renderer.debug.checkShaderErrors = false;
 // Basic lighting isn't required for splats, but adding a neutral background helps
 renderer.setClearColor(0x000000, 1);
 
+// Lights for GLTF avatars (splats are unlit and don't need lighting)
+const ambientLight = new THREE.AmbientLight(0xffffff, 1.0);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.75);
+directionalLight.position.set(1, 2, 1);
+scene.add(directionalLight);
+
 // Camera target (replaces OrbitControls target)
 const cameraTarget = new THREE.Vector3();
 
@@ -377,40 +397,15 @@ const world = new SplatMesh({ url: splatURL });
 world.quaternion.set(1, 0, 0, 0);
 world.position.set(0, 0, -3);
 scene.add(world);
+world.renderOrder = -1;
 world.updateMatrix();
 world.matrixAutoUpdate = false;
 cameraTarget.set(0, 0, -3);
 camera.lookAt(cameraTarget);
 
 // Collision + navigation helpers
-const raycaster = new THREE.Raycaster();
-// SplatMesh is rendered as points; set a threshold so point intersections are detected
-raycaster.params.Points = raycaster.params.Points || {};
-raycaster.params.Points.threshold = 0.05; // tweak if needed based on scene scale
-
-const collisionSettings = {
-  enabled: true,
-  radius: 0.12 // treat camera as a small sphere
-};
 
 function adjustPositionWithCollision(startVec, desiredVec) {
-  if (!collisionSettings.enabled) return desiredVec;
-  const from = startVec.clone();
-  const to = desiredVec.clone();
-  const delta = new THREE.Vector3().subVectors(to, from);
-  const distance = delta.length();
-  if (distance === 0) return desiredVec;
-
-  const direction = delta.clone().normalize();
-  raycaster.set(from, direction);
-  const hits = raycaster.intersectObject(world, false);
-  if (hits && hits.length > 0) {
-    const hit = hits[0];
-    if (hit.distance <= distance + collisionSettings.radius) {
-      const allowed = Math.max(0, hit.distance - collisionSettings.radius);
-      return from.addScaledVector(direction, allowed);
-    }
-  }
   return desiredVec;
 }
 
@@ -581,26 +576,14 @@ function updateUserAnimation(userId, isMoving) {
   const username = user ? user.username : userId;
   
   if (isMoving) {
-    // Switch to walking animation
     if (animations.walking) {
-      if (animations.idle) {
-        animations.idle.stop();
-      }
-      animations.walking.play();
-      console.log(`${username}: switched to walking`);
-    } else {
-      console.warn(`${username}: no walking animation available`);
+      if (animations.idle && animations.idle.isRunning()) animations.idle.stop();
+      animations.walking.reset().play();
     }
   } else {
-    // Switch to idle animation
     if (animations.idle) {
-      if (animations.walking) {
-        animations.walking.stop();
-      }
-      animations.idle.play();
-      console.log(`${username}: switched to idle`);
-    } else {
-      console.warn(`${username}: no idle animation available`);
+      if (animations.walking && animations.walking.isRunning()) animations.walking.stop();
+      animations.idle.reset().play();
     }
   }
 }
@@ -642,6 +625,12 @@ renderer.setAnimationLoop((time) => {
   
   // Update local user position
   if (localUser) {
+    const localAvatar = userAvatars.get(localUser.id);
+    if (localAvatar) {
+      // Hard-sync avatar to camera position and rotation every frame
+      localAvatar.position.copy(camera.position);
+      localAvatar.quaternion.copy(camera.quaternion);
+    }
     const newPos = {
       x: parseFloat(camera.position.x.toFixed(2)),
       y: parseFloat(camera.position.y.toFixed(2)),
